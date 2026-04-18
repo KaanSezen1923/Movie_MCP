@@ -1,4 +1,3 @@
-# client.py (Güncellenmiş hali)
 import ollama
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -18,16 +17,18 @@ async def get_ollama_tools(session):
         for tool in mcp_tools.tools
     ]
 
-async def chat_with_session(session, ollama_tools, prompt):
+async def chat_with_session(session, ollama_tools, prompt,persona=None):
     """Açık olan session üzerinden tek bir sohbet dönüşü yapar"""
-    model_name = 'gemma4:31b-cloud' # Veya llama3.1
+    model_name = 'minimax-m2.7:cloud ' 
+    
+    user_context = f"\nKULLANICI PROFİLİ: {persona}" if persona else ""# Veya llama3.1
 
     system_instructions = """
-    Sen profesyonel bir film danışmanısın. MCP araçlarından gelen verileri işlerken şu kurallara uy:
+    Sen profesyonel bir film danışmanısın.{user_context} MCP araçlarından gelen verileri işlerken şu kurallara uy:
     1. Yanıtlarını her zaman Türkçe ver.
     2. Eğer birden fazla film listeliyorsan, bunları mutlaka numaralandırılmış bir liste şeklinde sun.
     3. Her film için 'Neden İzlemelisin?' şeklinde bir cümlelik kişisel bir yorum ekle.
-    4. Poster linklerini ve fragman linklerini her zaman en sonda 'Medya' başlığı altında göster.
+    4. Poster linklerini  fragman linklerini ve platform bilgilerini  her zaman en sonda 'Medya' başlığı altında göster.
     5. Eğer sonuç bulunamazsa, kullanıcıya üzgün olduğunu söyleme, bunun yerine alternatif bir tür öner.
     6. Teknik verileri (ID'ler, ham JSON çıktıları) asla kullanıcıya gösterme.
     """
@@ -62,4 +63,30 @@ async def chat_with_session(session, ollama_tools, prompt):
             )
             return final_response['message']['content']
     
+    return response['message']['content']
+
+# client.py içine ekle
+async def generate_user_profile(chat_history_text):
+    """Sohbet geçmişinden kullanıcı ilgi alanlarını analiz eder."""
+    model_name = 'minimax-m2.7:cloud' # veya kullandığınız model
+    
+    profiler_instructions = """
+    Sen bir kullanıcı deneyimi analistisin. Aşağıdaki sohbet geçmişini analiz ederek kullanıcı hakkında bir "Persona Özeti" oluştur.
+    
+    Analizinde şunlara odaklan:
+    1. Sevdiği film türleri ve temalar.
+    2. Sevmediği veya kaçındığı içerikler.
+    3. Favori oyuncuları veya yönetmenleri.
+    4. Konuşma tarzı (kısa cevaplar mı veriyor, detaycı mı?).
+    
+    Çıktın kısa, öz ve üçüncü şahıs ağzından olmalı (Örn: "Kullanıcı bilim kurgu ve gerilim türlerinden hoşlanıyor...").
+    """
+
+    response = ollama.chat(
+        model=model_name,
+        messages=[
+            {'role': 'system', 'content': profiler_instructions},
+            {'role': 'user', 'content': f"Sohbet Geçmişi:\n{chat_history_text}"}
+        ]
+    )
     return response['message']['content']
