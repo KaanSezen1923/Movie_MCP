@@ -80,6 +80,7 @@ class UserLogin(BaseModel):
 class ChatRequest(BaseModel):
     prompt: str
     user_id: int
+    session_id: str
 
 class ChatResponse(BaseModel):
     answer: str
@@ -98,14 +99,14 @@ def verify_password(plain_password, hashed_password):
     hashed_byte = hashed_password.encode('utf-8')
     return bcrypt.checkpw(password_byte, hashed_byte)
 
-def save_chat_to_db(user_id: int, role: str, content: str):
+def save_chat_to_db(user_id: int, role: str, content: str, session_id: str):
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO chat_history (user_id, role, content) VALUES (%s, %s, %s)",
-            (user_id, role, content)
+            "INSERT INTO chat_history (user_id, role, content, session_id) VALUES (%s, %s, %s, %s)",
+            (user_id, role, content, session_id)
         )
         conn.commit()
     except Exception as e:
@@ -234,6 +235,69 @@ async def login(user: UserLogin):
 
 
 
+@app.get("/sessions/{user_id}")
+async def get_sessions(user_id: int):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        query = """
+            SELECT session_id, 
+                   MIN(created_at) as created,
+                   (SELECT content FROM chat_history ch2 WHERE ch2.session_id = ch1.session_id AND role='user' ORDER BY created_at ASC LIMIT 1) as title
+            FROM chat_history ch1
+            WHERE user_id = %s
+            GROUP BY session_id
+            ORDER BY created DESC
+        """
+        cursor.execute(query, (user_id,))
+        rows = cursor.fetchall()
+        sessions = [{"session_id": r[0], "title": r[2] if r[2] else "Yeni Sohbet"} for r in rows]
+        return {"sessions": sessions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
+@app.get("/chat/{user_id}/{session_id}")
+async def get_chat_history(user_id: int, session_id: str):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT role, content FROM chat_history WHERE user_id = %s AND session_id = %s ORDER BY created_at ASC",
+            (user_id, session_id)
+        )
+        rows = cursor.fetchall()
+        history = [{"role": r[0], "content": r[1]} for r in rows]
+        return {"history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
+@app.delete("/chat/{user_id}/{session_id}")
+async def delete_session(user_id: int, session_id: str):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM chat_history WHERE user_id = %s AND session_id = %s", (user_id, session_id))
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
 @app.post("/chat")
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     if not ctx.session:
@@ -243,7 +307,7 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     user_persona = get_user_persona(request.user_id)
     
     # 2. Mesajı veritabanına kaydet (User)
-    save_chat_to_db(request.user_id, "user", request.prompt)
+    save_chat_to_db(request.user_id, "user", request.prompt, request.session_id)
     
     # 3. chat_with_session fonksiyonuna persona bilgisini gönderiyoruz
     # Artık model "Kullanıcı bilim kurgu sever" gibi bilgilere sahip olacak
@@ -255,7 +319,7 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     )
     
     # 4. Asistan yanıtını kaydet
-    save_chat_to_db(request.user_id, "assistant", answer)
+    save_chat_to_db(request.user_id, "assistant", answer, request.session_id)
 
     # 5. Mesaj sayısını kontrol et ve arka plan görevini yönet
     conn = get_db_connection()
