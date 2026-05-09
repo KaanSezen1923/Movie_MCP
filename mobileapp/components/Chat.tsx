@@ -152,11 +152,12 @@ const handleSend = async () => {
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
+// Chat.tsx içinde renderItem kısmını şu şekilde güncelle:
           renderItem={({ item }) => (
             <View style={[styles.msgBox, item.role === 'user' ? styles.userMsg : styles.botMsg]}>
               <Text style={styles.text}>{item.content}</Text>
               {item.movies && item.movies.map((movie: any, i: number) => (
-                <MovieCard key={i} movie={movie} />
+                <MovieCard key={i} movie={movie} userId={userId} /> // userId'yi burada geçiyoruz
               ))}
             </View>
           )}

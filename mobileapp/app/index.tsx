@@ -1,18 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { createDrawerNavigator, DrawerContentScrollView } from '@react-navigation/drawer';
-import { Plus, LogOut, MessageSquare, Trash2, User as UserIcon } from 'lucide-react-native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'; // YENİ
+import { Plus, LogOut, MessageSquare, Trash2, User as UserIcon, Bookmark, MessageCircle } from 'lucide-react-native';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
-// Bileşenlerini import et
 import AuthScreen from '../components/AuthScreen';
 import Chat from '../components/Chat';
+import Watchlist from '../components/WatchList';
+import Profile from '../components/Profile'; // Profil bileşenini eklediğinizi varsayıyoruz
 
 const Drawer = createDrawerNavigator();
+const Tab = createBottomTabNavigator();
 const API_BASE_URL = 'http://localhost:8000';
 
+// --- ALT SEKME NAVİGASYONU (Bottom Tabs) ---
+function MainTabs({ userId, username, sessionId, messages, setMessages, fetchSessions }: any) {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { backgroundColor: '#121212', borderTopColor: '#333', height: 60, paddingBottom: 8 },
+        tabBarActiveTintColor: '#E50914',
+        tabBarInactiveTintColor: '#888',
+      }}
+    >
+      <Tab.Screen 
+        name="Chat" 
+        options={{ tabBarIcon: ({ color }) => <MessageCircle color={color} size={24} /> }}
+      >
+        {(props) => (
+          <Chat 
+            {...props} 
+            userId={userId} 
+            sessionId={sessionId} 
+            messages={messages}
+            setMessages={setMessages}
+            fetchSessions={fetchSessions}
+          />
+        )}
+      </Tab.Screen>
+
+      <Tab.Screen 
+        name="Favoriler" 
+        options={{ tabBarIcon: ({ color }) => <Bookmark color={color} size={24} /> }}
+      >
+        {() => <Watchlist userId={userId} />}
+      </Tab.Screen>
+
+      <Tab.Screen 
+        name="Profil" 
+        options={{ tabBarIcon: ({ color }) => <UserIcon color={color} size={24} /> }}
+      >
+        {() => <Profile userId={userId} username={username} />}
+      </Tab.Screen>
+    </Tab.Navigator>
+  );
+}
+
+// --- YAN MENÜ (Drawer) İÇERİĞİ ---
 const CustomDrawerContent = (props: any) => {
   const { userId, username, currentSessionId, setSessionId, sessions, fetchSessions, setUser } = props;
 
@@ -75,11 +123,12 @@ const CustomDrawerContent = (props: any) => {
   );
 };
 
+// --- ANA UYGULAMA BİLEŞENİ ---
 export default function App() {
   const [user, setUser] = useState<{ id: number; name: string } | null>(null);
   const [sessionId, setSessionId] = useState(uuidv4());
   const [sessions, setSessions] = useState([]);
-  const [messages, setMessages] = useState([]); // Chat state'ini burada yönetmek st.session_state mantığına daha yakın
+  const [messages, setMessages] = useState([]);
 
   const handleLoginSuccess = (id: number, name: string) => {
     setUser({ id, name });
@@ -101,7 +150,6 @@ export default function App() {
     return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // ÇÖZÜM: NavigationContainer kaldırıldı, direkt Drawer.Navigator döndürülüyor.
   return (
       <Drawer.Navigator
         drawerContent={(props) => (
@@ -117,14 +165,14 @@ export default function App() {
           />
         )}
         screenOptions={{ 
-          headerShown: false, 
+          headerShown: false,
           drawerStyle: { width: '80%' },
           swipeEnabled: true 
         }}
       >
-        <Drawer.Screen name="ChatMain">
+        <Drawer.Screen name="Main">
           {(props) => (
-            <Chat 
+            <MainTabs 
               {...props} 
               userId={user.id} 
               username={user.name} 
@@ -140,6 +188,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  // ... Mevcut stilleriniz (index.tsx içindeki stil bloklarını buraya ekleyin) ...
   sidebarHeader: { padding: 20, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#333' },
   usernameText: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
   sidebarActions: { flexDirection: 'row', padding: 15, justifyContent: 'space-between' },

@@ -1,156 +1,55 @@
 import requests
-from dotenv import load_dotenv
-import os
+import streamlit as st
+import time 
+import uuid
 
-load_dotenv()
-auth_key = os.getenv("AUTH_KEY")
+st.set_page_config(page_title="Movie MCP", page_icon="🎬")
 
-BASE_URL = "https://api.themoviedb.org/3"
-headers = {
-    "accept": "application/json",
-    "Authorization": f"Bearer {auth_key}"
-}
-
-genre_dict = {
-    "Action": 28, "Adventure": 12, "Animation": 16, "Comedy": 35,
-    "Crime": 80, "Documentary": 99, "Drama": 18, "Family": 10751,
-    "Fantasy": 14, "History": 36, "Horror": 27, "Music": 10402,
-    "Mystery": 9648, "Romance": 10749, "Science Fiction": 878,
-    "TV Movie": 10770, "Thriller": 53, "War": 10752, "Western": 37
-}
+API_BASE_URL = "http://localhost:8000"
 
 
-reverse_genre_dict = {v: k for k, v in genre_dict.items()}
-
-
-    
-def get_person_id(name: str) :
-    """İsimden kişi ID'sini bulur."""
-    search_url = f"{BASE_URL}/search/person"
-    params = {"query": name, "language": "en-US"}
-    resp = requests.get(search_url, headers=headers, params=params)
-    results = resp.json().get('results', [])
-    return results[0]['id'] if results else None
-
-def get_keyword_id(keyword: str):
-    """Kelime araması yaparak ilgili keyword ID'sini döndürür."""
-    search_url = f"{BASE_URL}/search/keyword"
-    params = {"query": keyword}
-    resp = requests.get(search_url, headers=headers, params=params)
-    results = resp.json().get('results', [])
-    
-    # İlk sonucun ID'sini döndürür
-    return results[0]['id'] if results else None
-
-def get_watch_platforms(movie_id: int) -> str:
-    """
-    Filmin Türkiye'deki (veya genel) izleme platformlarını döner.
-    """
-    watch_url = f"{BASE_URL}/movie/{movie_id}/watch/providers"
-    # TR pazarındaki platformlar için 'watch_region' parametresini kullanıyoruz
-    params = {"watch_region": "TR"} 
-    resp = requests.get(watch_url, headers=headers, params=params)
-    
-    if resp.status_code != 200:
-        return "Platform bilgisi alınamadı."
-
-    results = resp.json().get('results', {}).get('TR', {})
-    
-    platforms = []
-    
-    # 'flatrate' abonelik tabanlı (Netflix vb.), 'buy' ise satın alma seçenekleridir
-    if 'flatrate' in results:
-        for provider in results['flatrate']:
-            platforms.append(provider['provider_name'])
-            
-    if platforms:
-        return f"📺 İzleyebileceğin Platformlar: {', '.join(platforms)}"
-    
-    return "🚫 Şu an popüler bir platformda yayında değil (Sadece kiralama/satın alma olabilir)."
-
-def discover_movies(genre_name=None, actor_name=None, director_name=None, keyword=None, min_rating=None, sort_by="vote_average.desc"):
-    """
-    Tüm filtreleri birleştirerek film araması yapar.
-    Varsayılan olarak popülerliğe göre sıralar.
-    """
-    discover_url = f"{BASE_URL}/discover/movie"
-    
-    # Varsayılan parametreler
-    params = {
-        "include_adult": "false",
-        "include_video": "false",
-        "language": "en-US",
-        "page": 1,
-        "sort_by": sort_by
+def ask_mcp(prompt, session_id):
+    # session_state içindeki user_id'yi gönderiyoruz
+    payload = {
+        "prompt": prompt,
+        "user_id": st.session_state["user_id"],
+        "session_id": session_id
     }
-
-    # Filtreleri ekleyelim
-    if genre_name:
-        genre_id = genre_dict.get(genre_name)
-        if genre_id:
-            params["with_genres"] = genre_id
-
-    if actor_name:
-        actor_id = get_person_id(actor_name)
-        if actor_id:
-            params["with_cast"] = actor_id
-
-    if director_name:
-        director_id = get_person_id(director_name)
-        if director_id:
-            params["with_crew"] = director_id
-
-    if keyword:
-        keyword_id = get_keyword_id(keyword)
-        if keyword_id:
-            params["with_keywords"] = keyword_id
-
-    if min_rating:
-        params["vote_average.gte"] = min_rating
-        # Puan filtresi kullanıldığında genellikle daha anlamlı sonuç için oy sayısını da kısıtlarız
-        params["vote_count.gte"] = 100 
-
-    response = requests.get(discover_url, headers=headers, params=params)
-
+    response = requests.post("http://localhost:8000/chat", json=payload)
     if response.status_code == 200:
-        return response.json().get('results', [])
+        return response.json().get("answer", "Cevap alınamadı.")
     else:
-        print(f"Hata: {response.status_code}")
-        return []
+        return f"Hata: {response.status_code}"
     
 
-if __name__ == "__main__":
-    # Örnek: Christopher Nolan'ın yönettiği, 7.5 puan üzeri Bilim Kurgu filmleri
-    movies = discover_movies(
-        actor_name="Johnny Depp",
-        genre_name="fantasy",
+
+
+if "messages" not in st.session_state:
+        st.session_state["messages"] = []
+
+    # Chat geçmişini ekrana bas
+for msg in st.session_state["messages"]:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+
+user_input = st.chat_input("Bugün ne izlemek istersin?")
+
+if user_input:
+        # Kullanıcı mesajı
+        with st.chat_message("user"):
+            st.write(user_input)
+        st.session_state["messages"].append({"role": "user", "content": user_input})
         
-    )
-
-    for movie in movies:
-        # Verileri güvenli çekelim
-        movie_id = movie.get('id')
-        title = movie.get('title', 'Bilinmiyor')
-        year = movie.get('release_date', '????')[:4]
-        rating = movie.get('vote_average', 0)
-        overview = movie.get('overview', 'Özet bulunamadı.')
-        poster = movie.get('poster_path')
-        platform=get_watch_platforms(movie_id)
+        start_time = time.time()
+        with st.spinner("Film danışmanınız düşüniyor..."):
+            answer = ask_mcp(user_input, st.session_state["session_id"])
         
+        # Asistan yanıtı
+        with st.chat_message("assistant"):
+            st.write(answer["movies"])
+        st.session_state["messages"].append({"role": "assistant", "content": answer})
         
-        # Tür ID'lerini isimlere çevirelim
-        g_ids = movie.get('genre_ids', [])
-        g_names = [reverse_genre_dict.get(gid, str(gid)) for gid in g_ids]
-        genres_str = ", ".join(g_names)
-
-        # Temiz ve şık bir çıktı
-        print(f"🎬 {title} ({year})")
-        print(f"⭐ Puan: {rating} | 🎭 Türler: {genres_str}")
-        print(f"📝 Özet: {overview}")
-        print(f"📺 Platformlar: {platform}")
-        if poster:
-            print(f"🖼️ Poster: https://image.tmdb.org/t/p/w500{poster}")
-        print("-" * 50)
-
-
+        end_time = time.time()
+        st.caption(f"⏱️ Cevap süresi: {end_time - start_time:.2f} saniye")
 

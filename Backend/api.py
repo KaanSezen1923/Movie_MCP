@@ -14,6 +14,15 @@ import bcrypt
 
 load_dotenv()
 
+class FavoriteRequest(BaseModel):
+    user_id: int
+    movie_id: str
+    title: str
+    genres: str = None
+    director: str = None      # Yeni
+    cast_members: str = None   # Yeni
+    poster_url: str = None
+    imdb_rating: str = None
 
 
 @asynccontextmanager
@@ -337,3 +346,87 @@ def get_user_message_count(user_id: int):
 
     conn.close()
     return msg_count
+
+@app.post("/favorites")
+async def add_favorite(fav: FavoriteRequest):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            INSERT INTO favorites (user_id, movie_id, title, genres, director, cast_members, poster_url, imdb_rating)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, movie_id) DO NOTHING
+        """
+        cursor.execute(query, (
+            fav.user_id, fav.movie_id, fav.title, 
+            fav.genres, fav.director, fav.cast_members, # Yeni alanlar eklendi
+            fav.poster_url, fav.imdb_rating
+        ))
+        
+        conn.commit()
+        return {"status": "success", "message": "Film detaylarıyla birlikte favorilere eklendi."}
+    except Exception as e:
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn: conn.close()
+
+@app.delete("/favorites/{user_id}/{movie_id}")
+async def delete_favorite(user_id: int, movie_id: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM favorites WHERE user_id = %s AND movie_id = %s",
+            (user_id, movie_id)
+        )
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+# api.py içine eklenecek kısım
+
+@app.get("/favorites/{user_id}")
+async def get_favorites(user_id: int):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Veritabanından o kullanıcıya ait tüm favorileri çekiyoruz
+        query = """
+            SELECT movie_id, title, genres, director, cast_members, poster_url, imdb_rating 
+            FROM favorites 
+            WHERE user_id = %s 
+            ORDER BY created_at DESC
+        """
+        cursor.execute(query, (user_id,))
+        rows = cursor.fetchall()
+        
+        # Verileri frontend'in beklediği MovieData formatına sokuyoruz
+        favorites = [
+            {
+                "movie_id": r[0],
+                "Film": r[1],          # Card.tsx 'Film' anahtarını bekliyor
+                "Türler": r[2],        # Card.tsx 'Türler' anahtarını bekliyor
+                "Director": r[3],
+                "Cast": r[4],
+                "Poster": r[5],
+                "IMDb": r[6]
+            } for r in rows
+        ]
+        
+        return {"favorites": favorites}
+    except Exception as e:
+        print(f"❌ Favori getirme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()

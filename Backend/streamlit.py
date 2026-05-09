@@ -2,6 +2,7 @@ import streamlit as st
 import time
 import requests
 import uuid
+import json
 
 # Sayfa Konfigürasyonu
 st.set_page_config(page_title="Movie MCP", page_icon="🎬")
@@ -59,6 +60,39 @@ def ask_mcp(prompt, session_id):
         return response.json().get("answer", "Cevap alınamadı.")
     else:
         return f"Hata: {response.status_code}"
+    
+def display_message(role, content):
+    with st.chat_message(role):
+        if role == "assistant":
+            try:
+                # Metin JSON mı diye kontrol et
+                data = json.loads(content)
+                if isinstance(data, dict) and data.get("type") == "movie_list":
+                    st.write(data.get("text", ""))
+                    if data.get("movies"):
+                        for movie in data["movies"]:
+                            with st.expander(f"🎬 {movie.get('Film', 'Bilinmeyen Film')} ({movie.get('Yıl', 'N/A')})"):
+                                col1, col2 = st.columns([1, 3])
+                                with col1:
+                                    poster_url = movie.get("Poster")
+                                    if poster_url and poster_url != "URL":
+                                        st.image(poster_url, width=150)
+                                    else:
+                                        st.write("Poster Yok")
+                                with col2:
+                                    st.markdown(f"**IMDb:** {movie.get('IMDb', 'N/A')}")
+                                    st.markdown(f"**Türler:** {movie.get('Türler', 'N/A')}")
+                                    st.markdown(f"**Platform:** {movie.get('Şu Anki Platform(lar)', 'N/A')}")
+                                    st.markdown(f"**Özet:** {movie.get('Özet', 'N/A')}")
+                                    fragman_url = movie.get("Fragman")
+                                    if fragman_url and fragman_url != "URL":
+                                        st.markdown(f"[🎥 Fragman İzle]({fragman_url})")
+                    return
+            except (json.JSONDecodeError, TypeError):
+                pass # JSON değilse normal metin olarak devam et
+        
+        # Eğer user mesajıysa veya JSON değilse düz yazdır
+        st.write(content)
 
 def get_sessions(user_id):
     try:
@@ -141,11 +175,8 @@ else:
 
     # Chat geçmişini ekrana bas
     for msg in st.session_state["messages"]:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-
+        display_message(msg["role"], msg["content"])
     user_input = st.chat_input("Bugün ne izlemek istersin?")
-
     if user_input:
         # Kullanıcı mesajı
         with st.chat_message("user"):
@@ -156,9 +187,16 @@ else:
         with st.spinner("Film danışmanınız düşüniyor..."):
             answer = ask_mcp(user_input, st.session_state["session_id"])
         
+        # JSON'u parse et
+        try:
+            data = json.loads(answer)
+        except json.JSONDecodeError:
+            data = {"type": "error", "text": answer, "movies": []}
+        
         # Asistan yanıtı
-        with st.chat_message("assistant"):
-            st.write(answer)
+        display_message("assistant", answer)
+                          
+        
         st.session_state["messages"].append({"role": "assistant", "content": answer})
         
         end_time = time.time()

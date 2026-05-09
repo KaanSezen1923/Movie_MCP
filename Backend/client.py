@@ -1,5 +1,6 @@
 import json
 import re
+from pydantic import BaseModel
 from shared import ctx, GraphState
 import ollama
 from typing import TypedDict, Annotated, List
@@ -32,7 +33,7 @@ async def analyze_intent_node(state: GraphState):
     return {"intent": "recommendation" if "recommendation" in intent else "general"}
 
 async def recommendation_node(state: GraphState):
-    model_name = 'gpt-oss:120b-cloud'
+    model_name = 'gpt-oss:120b-cloud' # veya kullandığınız model
     
     # Prompt: JSON şemasını daha kesin belirttik
     system_msg = f"""
@@ -46,6 +47,8 @@ async def recommendation_node(state: GraphState):
       "movies": [
         {{
           "Film": "Adı",
+          "Director": "Yönetmen Adı",
+          "Cast": "Başrol Oyuncuları",
           "Yıl": "2024",
           "IMDb": "8.5",
           "Türler": "Aksiyon",
